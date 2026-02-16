@@ -29,7 +29,7 @@ vad = webrtcvad.Vad(2)
 # =====================
 # WHISPER CONFIG
 # =====================
-WHISPER_MODEL_SIZE = "large-v3-turbo"
+WHISPER_MODEL_SIZE = "distil-large-v3"
 DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
 
