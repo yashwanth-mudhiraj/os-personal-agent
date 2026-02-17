@@ -4,11 +4,9 @@ import time
 from queue import Queue
 import webrtcvad
 import re
-import psutil
 import pygetwindow as gw
 import string
-import launch_app as la
-import joblib
+import app_control as ac
 
 
 from faster_whisper import WhisperModel
@@ -20,6 +18,10 @@ SAMPLE_RATE = 16000
 BLOCK_MS = 10
 FINAL_CHUNK_SECONDS = 1.0
 SILENCE_TIMEOUT = 0.4
+
+LISTENING_MODE = False
+LAST_ACTIVITY_TIME = 0
+SESSION_TIMEOUT = 10  # seconds
 
 audio_q = Queue(maxsize=50)
 
@@ -60,18 +62,19 @@ WAKE_REGEX = re.compile(
 OPEN_VERBS = (
         "open",
         "launch",
-        "start",
-        "bring up",
     )
 
 FOCUS_VERBS = (
     "focus",
     "switch to",
-    "go to",
-    "activate",
 )
 
-catalog = la.load_or_refresh_catalog()
+CLOSE_VERBS = (
+    "close",
+    "exit",
+)
+
+catalog = ac.load_or_refresh_catalog()
 
 
 def extract_command(text: str) -> str | None:
@@ -108,6 +111,16 @@ def parse_intent(command_text: str):
     for verb in OPEN_VERBS:
         if text.startswith(verb):
             return "open", text[len(verb):].strip()
+        
+    for verb in CLOSE_VERBS:
+        if text.startswith(verb):
+            return "close", text[len(verb):].strip()
+        
+    if text.startswith("maximize"):
+        return "maximize", text[len("maximize"):].strip()
+    
+    if text.startswith("minimize"):
+        return "minimize", text[len("minimize"):].strip()
 
     return None, None
 
@@ -189,22 +202,58 @@ with stream:
             final_text = " ".join(s.text.strip() for s in segments if s.text.strip())
             final_text = remove_leading_the(final_text)
 
-            command_text = extract_command(final_text) 
+            current_time = time.time()
 
-            if command_text:
-                action, target = parse_intent(command_text)   # "open" / "focus"
-                target = clean_target(target or "")           # removes trailing punctuation etc.
+            # Auto-exit session after inactivity
+            if LISTENING_MODE and (current_time - LAST_ACTIVITY_TIME > SESSION_TIMEOUT):
+                LISTENING_MODE = False
+                print("🔕 Session ended due to inactivity.\n")
+
+            command_text = extract_command(final_text)
+
+            # Wake word detected → Start session
+            if command_text is not None:
+                LISTENING_MODE = True
+                LAST_ACTIVITY_TIME = current_time
+                print("🎧 Session started.\n")
+                continue  # Wait for next command
+
+            # If already in session mode → treat everything as command
+            if LISTENING_MODE:
+                action, target = parse_intent(final_text)
+                target = clean_target(target or "")
 
                 if action and target:
                     try:
-                        ok = la.handle_app_action(action, target, catalog)
-                        if not ok and action == "focus":
-                            print(f"⚠️ Can't focus '{target}' because it isn't open.")
+                        ok = ac.handle_app_action(action, target, catalog)
+                        if not ok and (action == "focus" or action == "close" or action == "maximize" or action == "minimize"):
+                            print(f"⚠️ '{target}' because it isn't open.")
                     except Exception as e:
                         print(f"❌ Command failed: {e}")
                 else:
-                    print(f"⚠️ Wake word detected but unknown/empty command: {command_text}")
+                    print(f"⚠️ Unknown command inside session: {final_text}")
 
+                LAST_ACTIVITY_TIME = current_time
             else:
                 print(f"✅ FINAL (whisper): {final_text}")
+
+
+            # command_text = extract_command(final_text) 
+
+            # if command_text:
+            #     action, target = parse_intent(command_text)   # "open" / "focus"
+            #     target = clean_target(target or "")           # removes trailing punctuation etc.
+
+            #     if action and target:
+            #         try:
+            #             ok = ac.handle_app_action(action, target, catalog)
+            #             if not ok and action == "focus":
+            #                 print(f"⚠️ Can't focus '{target}' because it isn't open.")
+            #         except Exception as e:
+            #             print(f"❌ Command failed: {e}")
+            #     else:
+            #         print(f"⚠️ Wake word detected but unknown/empty command: {command_text}")
+
+            # else:
+            #     print(f"✅ FINAL (whisper): {final_text}")
 
