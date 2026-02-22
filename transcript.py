@@ -3,11 +3,10 @@ import numpy as np
 import time
 from queue import Queue
 import webrtcvad
-import re
-import pygetwindow as gw
-import string
 import app_control as ac
-
+import helpers as hp
+from agent import SimpleAgent
+from voice_agent import speak
 
 from faster_whisper import WhisperModel
 
@@ -31,9 +30,13 @@ vad = webrtcvad.Vad(2)
 # =====================
 # WHISPER CONFIG
 # =====================
-WHISPER_MODEL_SIZE = "distil-large-v3"
-DEVICE = "cuda"
-COMPUTE_TYPE = "float16"
+# WHISPER_MODEL_SIZE = "distil-large-v3"
+# DEVICE = "cuda"
+# COMPUTE_TYPE = "float16"
+WHISPER_MODEL_SIZE = "small"
+DEVICE = "cpu"
+COMPUTE_TYPE = "int8"
+
 
 whisper_model = WhisperModel(
     WHISPER_MODEL_SIZE,
@@ -48,105 +51,6 @@ whisper_model.transcribe(
     beam_size=1,
     without_timestamps=True
 )
-
-# =====================
-# APP CONTROL CONFIG
-# =====================
-WAKE_WORD = "alice"
-
-WAKE_REGEX = re.compile(
-    rf"^\s*{WAKE_WORD}\b[\s,:-]*",
-    re.IGNORECASE
-)
-
-OPEN_VERBS = (
-        "open",
-        "launch",
-    )
-
-FOCUS_VERBS = (
-    "focus",
-    "switch to",
-)
-
-CLOSE_VERBS = (
-    "close",
-    "exit",
-)
-
-catalog = ac.load_or_refresh_catalog()
-
-
-def extract_command(text: str) -> str | None:
-    """
-    Returns command text if wake word is present, else None
-    """
-    if not WAKE_REGEX.match(text):
-        return None
-    return WAKE_REGEX.sub("", text).strip()
-
-# =====================
-# TEXT CLEANUP
-# =====================
-def remove_leading_the(text: str) -> str:
-    # Remove "the" only at the start of a sentence
-    return re.sub(r'(?i)(^|[.!?]\s+)\s*the\s+', r'\1', text).strip()
-
-def parse_intent(command_text: str):
-    """
-    Detects command intent and target.
-    Returns (intent, target) where:
-      intent ∈ {"open", "focus", None}
-      target is the remaining text or None
-    """
-    if not command_text:
-        return None, None
-
-    text = command_text.lower().strip()
-
-    for verb in FOCUS_VERBS:
-        if text.startswith(verb):
-            return "focus", text[len(verb):].strip()
-
-    for verb in OPEN_VERBS:
-        if text.startswith(verb):
-            return "open", text[len(verb):].strip()
-        
-    for verb in CLOSE_VERBS:
-        if text.startswith(verb):
-            return "close", text[len(verb):].strip()
-        
-    if text.startswith("maximize"):
-        return "maximize", text[len("maximize"):].strip()
-    
-    if text.startswith("minimize"):
-        return "minimize", text[len("minimize"):].strip()
-
-    return None, None
-
-def clean_target(text: str) -> str:
-    """
-    Cleans Whisper-produced app names:
-    - removes trailing punctuation (firefox.)
-    - removes surrounding quotes
-    - normalizes whitespace
-    """
-    if not text:
-        return ""
-
-    text = text.strip()
-
-    # Remove surrounding quotes
-    text = text.strip("\"'")
-
-    # Remove leading/trailing punctuation (. , ! ?)
-    text = text.strip(string.punctuation)
-
-    # Normalize whitespace
-    text = re.sub(r"\s+", " ", text)
-
-    return text
-
 
 # =====================
 # AUDIO CALLBACK
@@ -169,6 +73,8 @@ print("🎙️ Live dictation (Whisper-only). Ctrl+C to stop\n")
 
 buffer = bytearray()
 last_speech_time = time.time()
+
+
 
 with stream:
     while True:
@@ -200,60 +106,58 @@ with stream:
             )
 
             final_text = " ".join(s.text.strip() for s in segments if s.text.strip())
-            final_text = remove_leading_the(final_text)
+            final_text = hp.remove_leading_the(final_text)
+            if final_text:
+                current_time = time.time()
 
-            current_time = time.time()
+                # Auto-exit session after inactivity
+                if LISTENING_MODE and (current_time - LAST_ACTIVITY_TIME > SESSION_TIMEOUT):
+                    LISTENING_MODE = False
+                    print("🔕 Session ended due to inactivity.\n")
 
-            # Auto-exit session after inactivity
-            if LISTENING_MODE and (current_time - LAST_ACTIVITY_TIME > SESSION_TIMEOUT):
-                LISTENING_MODE = False
-                print("🔕 Session ended due to inactivity.\n")
+                command_text = hp.extract_command(final_text)
 
-            command_text = extract_command(final_text)
+                # Wake word detected → Start session
+                if command_text is not None:
+                    LISTENING_MODE = True
+                    LAST_ACTIVITY_TIME = current_time
+                    print("🎧 Session started.\n")
+                    continue  # Wait for next command
 
-            # Wake word detected → Start session
-            if command_text is not None:
-                LISTENING_MODE = True
-                LAST_ACTIVITY_TIME = current_time
-                print("🎧 Session started.\n")
-                continue  # Wait for next command
+                if LISTENING_MODE:          # Commander Mode
+                    print(f"🗣 You: {final_text}")
+                    
+                    # 1. THE FAST PATH: Instant Regex/String matching for obvious commands
+                    lower_text = final_text.lower()
+                    command_keywords = ["open ", "close ", "focus ", "maximize", "minimize"]
+                    
+                    # Check if the text starts with any of our known actions
+                    if any(lower_text.startswith(kw) for kw in command_keywords):
+                        # Use your existing fast regex parser for standard commands
+                        action, target = hp.parse_intent(final_text) 
+                        target = hp.clean_target(target or "")
+                        
+                        print(f"⚡ FAST PATH Triggered: {action} -> {target}")
+                        
+                        if action and target:
+                            try:
+                                ok = ac.handle_app_action(action, target, hp.catalog)
+                                if not ok:
+                                    print(f"⚠️ I couldn't find {target}.")
+                            except Exception as e:
+                                print(f"❌ Command failed: {e}")
+                                
+                    # 2. THE SLOW PATH: Send to LLM for Chat and complex routing
+                    else:               # Commander Fallback to LLM for complex commands or chat
+                        print("🧠 Sending to LLM for analysis...")
+                        hp.agent_call(final_text)  # This will handle both commands and chat responses via the agent
+                    LAST_ACTIVITY_TIME = current_time
 
-            # If already in session mode → treat everything as command
-            if LISTENING_MODE:
-                action, target = parse_intent(final_text)
-                target = clean_target(target or "")
+                else:  # Agent Chat Mode
+                    print(f"🗣 You: {final_text}")
 
-                if action and target:
-                    try:
-                        ok = ac.handle_app_action(action, target, catalog)
-                        if not ok and (action == "focus" or action == "close" or action == "maximize" or action == "minimize"):
-                            print(f"⚠️ '{target}' because it isn't open.")
-                    except Exception as e:
-                        print(f"❌ Command failed: {e}")
-                else:
-                    print(f"⚠️ Unknown command inside session: {final_text}")
-
-                LAST_ACTIVITY_TIME = current_time
-            else:
-                print(f"✅ FINAL (whisper): {final_text}")
+                    hp.agent_call(final_text)  # This will handle both commands and chat responses via the agent
+                    
 
 
-            # command_text = extract_command(final_text) 
-
-            # if command_text:
-            #     action, target = parse_intent(command_text)   # "open" / "focus"
-            #     target = clean_target(target or "")           # removes trailing punctuation etc.
-
-            #     if action and target:
-            #         try:
-            #             ok = ac.handle_app_action(action, target, catalog)
-            #             if not ok and action == "focus":
-            #                 print(f"⚠️ Can't focus '{target}' because it isn't open.")
-            #         except Exception as e:
-            #             print(f"❌ Command failed: {e}")
-            #     else:
-            #         print(f"⚠️ Wake word detected but unknown/empty command: {command_text}")
-
-            # else:
-            #     print(f"✅ FINAL (whisper): {final_text}")
 

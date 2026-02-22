@@ -15,7 +15,7 @@ import pygetwindow as gw
 # ✅ NEW: robust Win32 focus fallback
 import win32con
 import win32gui
-
+import win32com.client
 
 # -----------------------
 # Cache config
@@ -224,14 +224,26 @@ def _window_is_usable(w) -> bool:
 
 def _force_foreground(hwnd: int) -> None:
     """
-    More reliable than pygetwindow.activate() on Windows.
+    More reliable than pygetwindow.activate() by bypassing Windows 
+    focus-stealing restrictions.
     """
-    # Restore if minimized
-    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    try:
+        # 1. Restore the window if it's minimized
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
 
-    # Bring to top + set foreground
-    win32gui.BringWindowToTop(hwnd)
-    win32gui.SetForegroundWindow(hwnd)
+        # 2. The "Alt-Key Hack": 
+        # Windows often blocks SetForegroundWindow unless the calling 
+        # process is the active one. Simulating an ALT keypress bypasses this.
+        shell = win32com.client.Dispatch("WScript.Shell")
+        shell.SendKeys('%') # Sends the "Alt" key
+
+        # 3. Force the window to the front
+        win32gui.SetForegroundWindow(hwnd)
+        win32gui.BringWindowToTop(hwnd)
+        
+    except Exception as e:
+        print(f"⚠️ Internal focus error: {e}")
 
 def focus_any_app(spoken_name: str) -> bool:
     # ✅ normalize Whisper mistakes (vs core -> vs code etc.)
