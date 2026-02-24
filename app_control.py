@@ -342,7 +342,7 @@ def close_any_app(spoken_name: str) -> bool:
         return False
     
 # -----------------------
-# Unified entry point (your assistant can call this)
+# Unified entry point (assistant can call this)
 # -----------------------
 def handle_app_action(action: str, target: str, catalog: List[AppEntry]) -> bool:
     action = action.lower().strip()

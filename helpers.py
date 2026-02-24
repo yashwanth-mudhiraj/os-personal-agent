@@ -4,6 +4,11 @@ import constants as const
 from agent import SimpleAgent
 from voice_agent import speak
 import app_control as ac
+import file_control as fc
+from session_state import session
+
+agent = SimpleAgent()
+catalog = ac.load_or_refresh_catalog()
 
 # =====================
 # TEXT CLEANUP
@@ -97,29 +102,76 @@ def extract_command(text: str) -> str | None:
         return None
     return const.WAKE_REGEX.sub("", text).strip()
 
+def normalize_spoken_numbers(text: str) -> str:
+    number_words = {
+        "zero": "0",
+        "one": "1",
+        "two": "2",
+        "three": "3",
+        "four": "4",
+        "five": "5"
+    }
 
-agent = SimpleAgent()
-catalog = ac.load_or_refresh_catalog()
+    for word, digit in number_words.items():
+        # replace full word only
+        text = re.sub(rf"\b{word}\b", digit, text)
+
+    return text
 
 def agent_call(final_text: str):
     # Now returns a LIST of items, e.g., [{"intent": "command", ...}, {"intent": "chat", ...}]
     llm_responses = agent.chat(final_text)
 
     for task in llm_responses:
-        intent = task.get("intent")
-        
-        if intent == "command":
-            # Handle system actions (e.g., "open firefox")
+        if task.get("intent") == "system":
+
+            type = task.get("type")
             action = task.get("action")
             target = task.get("target")
-            print(f"⚙️ Action: {action} -> {target}")
-            ac.handle_app_action(action, target, catalog)
-            speak(f"{action}ing {target}")  # Verbal confirmation
+        
+            if type == "app":
+                # Handle system actions (e.g., "open firefox")
+                print(f"⚙️ Action: {action} -> {target}")
+                ok = ac.handle_app_action(action, target, catalog)
+                if ok:
+                    speak(f"{action}ing {target}")  # Verbal confirmation
+                else:
+                    speak(f"Sorry, I couldn't {action} {target}.")
+
+            elif type in ["file", "folder"]:
+
+                print(f"📁 {type.capitalize()} Action: {action} -> {target}")
+
+                result = fc.handle_file_action(action, type, target)
+
+                # ❌ No matches
+                if result is False:
+                    speak("I couldn't find anything matching that.")
+                    return
+
+                # ✅ Multiple matches → store in session
+                if isinstance(result, list):
+
+                    session.set_pending(result, type)
+
+                    print(f"📂 Multiple {type}s found:")
+                    for i, entry in enumerate(result):
+                        print(f"{i+1}. {entry.name} - {entry.path}")
+
+                    speak(f"I found multiple {type}s. Say open number one.")
+                    return
+
+                # ✅ Single match (already opened)
+                speak(f"Opening {target}")
             
-        elif intent == "chat":
-            # Handle verbal responses
-            response_text = task.get("response", "I'm not sure how to respond to that.")
-            print(f"🤖 Agent: {response_text}")
-            speak(response_text)
+        elif task.get("intent") == "chat":
+                # Handle verbal responses
+                response_text = task.get("response", "I'm not sure how to respond to that.")
+                print(f"🤖 Agent: {response_text}")
+                speak(response_text)
+
+        else:
+            speak("I'm sorry, I'm not sure how to respond to that.")
 
     print("-" * 30 + "\n")
+

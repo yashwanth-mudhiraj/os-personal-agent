@@ -26,7 +26,7 @@ def speak(text):
     # The pipeline returns a generator of (graphemes, phonemes, audio)
     generator = pipeline(
         text, 
-        voice='bf_alice', # 'af_heart' is high quality. Try 'af_bella' too.
+        voice='af_heart', # 'af_heart' is high quality. Try 'af_bella' too.
         speed=1, 
         split_pattern=r'\n+'
     )

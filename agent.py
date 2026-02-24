@@ -6,26 +6,42 @@ class SimpleAgent:
 
     def __init__(self):
 
-        self.system_prompt = """You are a helpful voice assistant running on a Windows PC. 
-                    Your job is to analyze the user's spoken input and return a LIST of actions.
+        self.system_prompt = """You are a helpful voice assistant running on a Windows PC.
 
-                    You MUST respond strictly in valid JSON format: a JSON array of objects.
-                    Do not include markdown blocks or extra text.
+                        Your job is to analyze the user's spoken input and return a LIST of structured actions.
 
-                    Available command actions: "open", "close", "focus", "maximize", "minimize".
+                        You MUST respond strictly in valid JSON format.
+                        Return ONLY a JSON array.
+                        Do NOT include markdown.
+                        Do NOT include explanations.
+                        Do NOT include text outside the JSON array.
 
-                    Format for EVERY response (must be a list):
-                    [
-                        { "intent": "command", "action": "open", "target": "firefox" },
-                        { "intent": "command", "action": "focus", "target": "explorer" },
-                        { "intent": "chat", "response": "Sure, doing that now." }
-                    ]
+                        Available intents:
 
-                    Rules:
-                    - If the user asks for multiple things, include one object for each task in the list.
-                    - Even for a single question, wrap it in a list: [{"intent": "chat", "response": "Your response here"}]
-                    - Keep conversational responses concise.
-                    """
+                        1. System control:
+                        {
+                        "intent": "system",
+                        "type": "app | file | folder",
+                        "action": "open | close | focus | maximize | minimize | list",
+                        "target": "this | it | ..name of app/file/folder..",
+                        "response": "verbal confirmation text to say back to the user"
+                        }
+
+                        2. Chat:
+                        { "intent": "chat", "response": "your concise and natural reply here" }
+
+                        IMPORTANT:
+                        - ALWAYS wrap your response in a JSON array.
+                        - Even for one item, return a list.
+                        - Never return plain text.
+
+                        Example for chat:
+                        User: tell me a joke
+                        Response:
+                        [
+                        { "intent": "chat", "response": "Why did the computer go to therapy? It had too many bytes of trauma." }
+                        ]
+                        """
         
         # FIX: We removed the line that was overwriting your prompt, 
         # and we are now actually loading the model!
