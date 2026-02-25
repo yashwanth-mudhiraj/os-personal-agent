@@ -24,6 +24,7 @@ class SimpleAgent:
                         "type": "app | file | folder",
                         "action": "open | close | focus | maximize | minimize | list",
                         "target": "this | it | ..name of app/file/folder..",
+                        "location": "D:/ | ..optional, only for files/folders..",
                         "response": "verbal confirmation text to say back to the user"
                         }
 
@@ -40,6 +41,20 @@ class SimpleAgent:
                         Response:
                         [
                         { "intent": "chat", "response": "Why did the computer go to therapy? It had too many bytes of trauma." }
+                        ]
+
+                        Example for opening folder in a drive:
+                        User: open my folder games in d drive
+                        Response:
+                        [
+                        {
+                        "intent": "system",
+                        "type": "folder",
+                        "action": "open",
+                        "target": "games",
+                        "location": "D:/",
+                        "response": "Opening the games folder in D drive."
+                        }
                         ]
                         """
         

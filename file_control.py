@@ -294,7 +294,7 @@ def normalize_filename(name: str) -> str:
 # SEARCH
 # =========================
 
-def search_files(query: str, limit: int = 5) -> List[FileEntry]:
+def search_files(query: str, limit: int = 5, drive: str | None = None) -> List[FileEntry]:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -321,6 +321,10 @@ def search_files(query: str, limit: int = 5) -> List[FileEntry]:
         params.extend([f"%{token}%", f"%{token}%"])
 
     where_clause = " AND ".join(like_clauses)
+
+    if drive:
+        where_clause += " AND path LIKE ?"
+        params.append(f"{drive.upper()}%")
 
     sql = f"""
         SELECT id, name, path, type, extension, last_modified
@@ -437,11 +441,14 @@ def save_meta(key: str, value: str):
 # Unified entry point (assistant can call this)
 # -----------------------
 
-def handle_file_action(action: str, type: str, target: str) -> bool:
+def handle_file_action(action: str, type: str, target: str, location: str = None) -> bool:
     action = action.lower().strip()
     target = target.strip()
 
-    matches = search_files(target)
+    if location:
+        matches = search_files(target, drive=location[0])
+    else:
+        matches = search_files(target)
 
     if not matches:
         print("❌ No matching file or folder found.")

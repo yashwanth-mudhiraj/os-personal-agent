@@ -231,22 +231,30 @@ with stream:
                     lower_text = final_text.lower()
                     command_keywords = ["open ", "close ", "focus ", "maximize", "minimize"]
 
-                    # -----------------------------------------
-                    # FILE CONTROL FAST PATH
-                    # -----------------------------------------
+                    # =========================
+                    # FAST PATH ROUTING
+                    # =========================
 
-                    # Open folder
-                    if "open the folder" in lower_text or "open folder" in lower_text:
-                        target = (
-                            lower_text
-                            .replace("open the folder", "")
-                            .replace("open folder", "")
-                            .strip()
+                    # -------------------------
+                    # OPEN FOLDER
+                    # -------------------------
+                    folder_open_match = re.match(r"^open\b.*\bfolder\b", lower_text)
+
+                    if folder_open_match:
+
+                        drive = hp.extract_drive(lower_text)
+
+                        target = hp.clean_target_phrase(
+                            lower_text,
+                            ["open", "folder", "my", "the", "in", "on", "from", "drive"]
                         )
+
+                        if drive:
+                            target = f"{target} {drive}"
 
                         result = file_control.handle_file_action("open", "folder", target)
 
-                        if isinstance(result, list):  # multiple matches
+                        if isinstance(result, list):
                             session.set_pending(result, "folder")
 
                             print("📂 Multiple folders found:")
@@ -256,18 +264,24 @@ with stream:
                             print("Say: open number X")
 
 
-                    # Open file
-                    elif "open the file" in lower_text or "open file" in lower_text:
-                        target = (
-                            lower_text
-                            .replace("open the file", "")
-                            .replace("open file", "")
-                            .strip()
+                    # -------------------------
+                    # OPEN FILE
+                    # -------------------------
+                    elif re.match(r"^open\b.*\bfile\b", lower_text):
+
+                        drive = hp.extract_drive(lower_text)
+
+                        target = hp.clean_target_phrase(
+                            lower_text,
+                            ["open", "file", "my", "the", "in", "on", "from", "drive"]
                         )
+
+                        if drive:
+                            target = f"{target} {drive}"
 
                         result = file_control.handle_file_action("open", "file", target)
 
-                        if isinstance(result, list):  # multiple matches
+                        if isinstance(result, list):
                             session.set_pending(result, "file")
 
                             print("📄 Multiple files found:")
@@ -277,17 +291,22 @@ with stream:
                             print("Say: open number X")
 
 
-                    # List folder contents
-                    elif "list the folder" in lower_text or "what files are in the folder" in lower_text:
+                    # -------------------------
+                    # LIST FOLDER
+                    # -------------------------
+                    elif re.match(r"^(list\b.*\bfolder\b|what files are in\b.*\bfolder\b)", lower_text):
 
-                        target = (
-                            lower_text
-                            .replace("list the folder", "")
-                            .replace("what files are in the folder", "")
-                            .strip()
+                        drive = hp.extract_drive(lower_text)
+
+                        target = hp.clean_target_phrase(
+                            lower_text,
+                            ["list", "what", "files", "are", "in", "folder", "the", "my", "on", "from", "drive"]
                         )
 
-                        result = file_control.handle_file_action("list_folder", "folder", target)
+                        if drive:
+                            target = f"{target} {drive}"
+
+                        result = file_control.handle_file_action("list", "folder", target)
 
                         if result is False:
                             speak("I couldn't find that folder.")

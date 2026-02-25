@@ -118,6 +118,43 @@ def normalize_spoken_numbers(text: str) -> str:
 
     return text
 
+# =========================
+# REGEX HELPERS
+# =========================
+
+def extract_drive(text: str):
+    """
+    Supports:
+    - in d drive
+    - in drive d
+    - from c drive
+    - on drive e
+    - drive d
+    """
+
+    patterns = [
+        r"\b(?:in|on|from)?\s*([a-z])\s+drive\b",   # d drive
+        r"\b(?:in|on|from)?\s*drive\s+([a-z])\b",   # drive d
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).upper() + ":/"
+
+    return None
+
+
+def clean_target_phrase(text: str, remove_words: list[str]) -> str:
+    """
+    Removes control words like:
+    open, folder, file, my, the, etc.
+    """
+    pattern = r"\b(" + "|".join(remove_words) + r")\b"
+    text = re.sub(pattern, "", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
 def agent_call(final_text: str):
     # Now returns a LIST of items, e.g., [{"intent": "command", ...}, {"intent": "chat", ...}]
     llm_responses = agent.chat(final_text)
@@ -128,6 +165,7 @@ def agent_call(final_text: str):
             type = task.get("type")
             action = task.get("action")
             target = task.get("target")
+            location = task.get("location", None)
         
             if type == "app":
                 # Handle system actions (e.g., "open firefox")
@@ -142,7 +180,7 @@ def agent_call(final_text: str):
 
                 print(f"📁 {type.capitalize()} Action: {action} -> {target}")
 
-                result = fc.handle_file_action(action, type, target)
+                result = fc.handle_file_action(action, type, target, location)
 
                 # ❌ No matches
                 if result is False:
