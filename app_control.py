@@ -21,7 +21,7 @@ import win32com.client
 # Cache config
 # -----------------------
 CACHE_TTL_SECONDS = 7 * 24 * 3600  # 7 days
-CACHE_PATH = os.path.join(os.environ.get("LOCALAPPDATA", "."), "lumo_app_catalog.json")
+CACHE_PATH = os.path.join(os.environ.get("LOCALAPPDATA", "."), "agent_app_catalog.json")
 
 # -----------------------
 # Utilities
